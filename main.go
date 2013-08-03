@@ -6,6 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 )
 
 var (
@@ -24,19 +27,34 @@ func drawThread(req <-chan *http.Request) {
 	for {
 		log.Println("Drawing thread waiting for request...")
 		current = <-reqChan
-		log.Println(current)
 		// Extract image from request
-		/*file, header, err := current.FormFile("image-file")
+		file, header, err := current.FormFile("imagefile")
 		if err != nil {
 			log.Println("Error while getting form file from request")
-			log.Fatal(err)
-		}*/
+			log.Println(err)
+			continue
+		}
+		// Check file MIME type TODO
+		var img image.Image
+		switch header.Header["Content-Type"][0] {
+		case "image/jpeg", "image/png":
+			img, _, err = image.Decode(file)
+			if err != nil {
+				log.Println("Error while decoding request image data")
+				log.Println(err)
+				continue
+			}
+		default:
+			log.Println("Unsupported image format ", header.Header["Content-Type"])
+			continue
+		}
+		// TODO: decode image data
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
-		openvg.Start(screenWidth, screenHeight)                               // Start the picture
+		openvg.Start(screenWidth, screenHeight)                   // Start the picture
 		openvg.BackgroundColor("black")                           // Black background
 		openvg.FillRGB(44, 100, 232, 1)                           // Big blue marble
 		openvg.FillColor("white")                                 // White text
-		//openvg.ImageGo(0, 0, screenWidth, screenHeight, img)
+		openvg.ImageGo(100, 100, 387, 362, img)
 		// openvg.TextMid(float32(screenWidth / 2), float32(screenHeight / 2), "hello, world", "serif", screenWidth/10) // Greetings
 		openvg.End()
 	}
