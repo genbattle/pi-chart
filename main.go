@@ -17,19 +17,28 @@ var (
 func drawThread(req <-chan *http.Request) {
 	screenWidth, screenHeight := openvg.Init()
 	openvg.Start(screenWidth, screenHeight)
+	log.Println("Finished OpenVG Init in drawing thread")
 	var current *http.Request
-	defer openvg.Finish()
+	defer openvg.Finish() // Never gets called?
 	// Poll endlessly for requests to draw
 	for {
+		log.Println("Drawing thread waiting for request...")
+		current = <-reqChan
+		log.Println(current)
+		// Extract image from request
+		/*file, header, err := current.FormFile("image-file")
+		if err != nil {
+			log.Println("Error while getting form file from request")
+			log.Fatal(err)
+		}*/
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
-		log.Println("Got request ", current)
 		openvg.Start(screenWidth, screenHeight)                               // Start the picture
 		openvg.BackgroundColor("black")                           // Black background
 		openvg.FillRGB(44, 100, 232, 1)                           // Big blue marble
 		openvg.FillColor("white")                                 // White text
+		//openvg.ImageGo(0, 0, screenWidth, screenHeight, img)
 		// openvg.TextMid(float32(screenWidth / 2), float32(screenHeight / 2), "hello, world", "serif", screenWidth/10) // Greetings
 		openvg.End()
-		current = <-req
 	}
 }
 
@@ -39,6 +48,7 @@ func handlePOST(w http.ResponseWriter, r *http.Request) {
 	// TODO: Check MIME type?
 	// Post the data to the screen
 	// TODO: Replace generic hell world code with something useful
+	log.Println("Sending request to drawing thread")
 	reqChan <- r
 	handleGET(w, r)
 }
@@ -75,7 +85,7 @@ func main() {
 		log.Fatal(err)
 	}
 	// Set up the OpenVG rendering
-	reqChan := make(chan *http.Request)
+	reqChan = make(chan *http.Request)
 	go drawThread(reqChan)
 	// Create default handler
 	http.HandleFunc("/", handle)
