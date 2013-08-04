@@ -1,21 +1,62 @@
+/*
+pi-chart
+
+A remote http-based display server for the Raspberry Pi.
+
+Created for use as a heads-up information display on large screens attached to the Raspberry Pi. Uses OpenVG to draw highly-accelerated 2D graphics.
+
+TODO: json/XML-based layout
+TODO: Command-line flags
+TODO: Variable resolution
+TODO: Transitional animations
+*/
 package main
 
 import (
 	"github.com/genbattle/openvg"
+	"image"
+	_ "image/jpeg"
+	_ "image/png"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
+	"errors"
 )
 
 var (
 	screenWidth, screenHeight int
 	submitPage                []byte
-	reqChan chan *http.Request
+	reqChan                   chan *http.Request
 )
+
+// Download and decode an image from a url
+func downloadImage(url string) (image.Image, error) {
+	return nil, nil
+}
+
+// Extract and decode an image submitted as part of a form POST
+func extractImage(req *http.Request) (image.Image, error) {
+	file, header, err := req.FormFile("imagefile")
+	if err != nil {
+		log.Println("Error while getting form file from request")
+		return nil, err
+	}
+	// Check file MIME type
+	var img image.Image
+	switch header.Header["Content-Type"][0] {
+	case "image/jpeg", "image/png":
+		img, _, err = image.Decode(file)
+		if err != nil {
+			log.Println("Error while decoding request image data")
+			return nil, err
+		}
+	default:
+		log.Println("Unsupported image format ", header.Header["Content-Type"])
+		return nil, errors.New("Unsupported image format")
+	}
+	return img, nil
+}
 
 func drawThread(req <-chan *http.Request) {
 	screenWidth, screenHeight := openvg.Init()
@@ -27,34 +68,24 @@ func drawThread(req <-chan *http.Request) {
 	for {
 		log.Println("Drawing thread waiting for request...")
 		current = <-reqChan
+		// Choose what to do based on what form fields are populated
+		current.ParseMultipartForm(10485760) // Parse the form with 10MB buffer
+		log.Println(len(current.MultipartForm.Value))
+		log.Println(len(current.MultipartForm.File))
+
 		// Extract image from request
-		file, header, err := current.FormFile("imagefile")
+		img, err := extractImage(current)
 		if err != nil {
-			log.Println("Error while getting form file from request")
-			log.Println(err)
-			continue
+			log.Println("Error while extracting image from POST form")
+			log.Fatal(err)
 		}
-		// Check file MIME type TODO
-		var img image.Image
-		switch header.Header["Content-Type"][0] {
-		case "image/jpeg", "image/png":
-			img, _, err = image.Decode(file)
-			if err != nil {
-				log.Println("Error while decoding request image data")
-				log.Println(err)
-				continue
-			}
-		default:
-			log.Println("Unsupported image format ", header.Header["Content-Type"])
-			continue
-		}
-		// TODO: decode image data
+		// Download image
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
-		openvg.Start(screenWidth, screenHeight)                   // Start the picture
-		openvg.BackgroundColor("black")                           // Black background
-		openvg.FillRGB(44, 100, 232, 1)                           // Big blue marble
-		openvg.FillColor("white")                                 // White text
-		openvg.ImageGo(100, 100, 387, 362, img)
+		openvg.Start(screenWidth, screenHeight) // Start the picture
+		openvg.BackgroundColor("black")         // Black background
+		openvg.FillRGB(44, 100, 232, 1)         // Big blue marble
+		openvg.FillColor("white")               // White text
+		openvg.ImageGo(100, 100, img)
 		// openvg.TextMid(float32(screenWidth / 2), float32(screenHeight / 2), "hello, world", "serif", screenWidth/10) // Greetings
 		openvg.End()
 	}
