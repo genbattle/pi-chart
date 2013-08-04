@@ -72,17 +72,14 @@ func drawThread(req <-chan *http.Request) {
 		current = <-reqChan
 		// Parse the POST form
 		current.ParseMultipartForm(10485760) // Parse the form with 10MB buffer
-		log.Println("1")
 		// Get all images (files) from the form
 		for i := range current.MultipartForm.File {
 			img, err := extractImage(current.MultipartForm.File[i][0]) //TODO: should we check for more than one file header per key here?
-		log.Println("2")
 			if err != nil {
 				log.Println("Error while extracting image ", i, " from POST form")
 				continue
 			}
 			images = append(images, &img)
-		log.Println("3")
 		}
 
 		// TODO: Get images from URLs in the form
