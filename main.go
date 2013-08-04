@@ -103,10 +103,14 @@ func drawThread(req <-chan *http.Request) {
 				if rowHeight < bounds.Dy() {
 					rowHeight = bounds.Dy()
 				}
-				openvg.ImageGo(float32(widthCount-bounds.Dx()), float32(screenHeight-heightCount),*images[i])
+				openvg.ImageGo(float32(widthCount-bounds.Dx()), float32(screenHeight-heightCount-bounds.Dy()),*images[i])
 			} else {
 				widthCount = 0
 				heightCount += rowHeight
+				if heightCount > screenHeight {
+					log.Println("Ran out of room to print images, ignoring some")
+					break
+				}
 			}
 		}
 		openvg.End()
