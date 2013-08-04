@@ -13,6 +13,7 @@ TODO: Transitional animations
 package main
 
 import (
+	"errors"
 	"github.com/genbattle/openvg"
 	"image"
 	_ "image/jpeg"
@@ -21,7 +22,7 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"errors"
+	"mime/multipart"
 )
 
 var (
@@ -36,10 +37,10 @@ func downloadImage(url string) (image.Image, error) {
 }
 
 // Extract and decode an image submitted as part of a form POST
-func extractImage(req *http.Request) (image.Image, error) {
-	file, header, err := req.FormFile("imagefile")
+func extractImage(header *multipart.FileHeader) (image.Image, error) {
+	file, err := header.Open()
 	if err != nil {
-		log.Println("Error while getting form file from request")
+		log.Println("Error while getting form file from header")
 		return nil, err
 	}
 	// Check file MIME type
@@ -63,40 +64,58 @@ func drawThread(req <-chan *http.Request) {
 	openvg.Start(screenWidth, screenHeight)
 	log.Println("Finished OpenVG Init in drawing thread")
 	var current *http.Request
+	var images []*image.Image
 	defer openvg.Finish() // Never gets called?
 	// Poll endlessly for requests to draw
 	for {
 		log.Println("Drawing thread waiting for request...")
 		current = <-reqChan
-		// Choose what to do based on what form fields are populated
+		// Parse the POST form
 		current.ParseMultipartForm(10485760) // Parse the form with 10MB buffer
-		log.Println(len(current.MultipartForm.Value))
-		log.Println(len(current.MultipartForm.File))
-
-		// Extract image from request
-		img, err := extractImage(current)
-		if err != nil {
-			log.Println("Error while extracting image from POST form")
-			log.Fatal(err)
+		log.Println("1")
+		// Get all images (files) from the form
+		for i := range current.MultipartForm.File {
+			img, err := extractImage(current.MultipartForm.File[i][0]) //TODO: should we check for more than one file header per key here?
+		log.Println("2")
+			if err != nil {
+				log.Println("Error while extracting image ", i, " from POST form")
+				continue
+			}
+			images = append(images, &img)
+		log.Println("3")
 		}
+
+		// TODO: Get images from URLs in the form
+
 		// Download image
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
 		openvg.Start(screenWidth, screenHeight) // Start the picture
 		openvg.BackgroundColor("black")         // Black background
-		openvg.FillRGB(44, 100, 232, 1)         // Big blue marble
-		openvg.FillColor("white")               // White text
-		openvg.ImageGo(100, 100, img)
-		// openvg.TextMid(float32(screenWidth / 2), float32(screenHeight / 2), "hello, world", "serif", screenWidth/10) // Greetings
+
+		// Display images in a simple scanning grid
+		widthCount := 0  // total row width
+		heightCount := 0 // total screen height
+		rowHeight := 0   // max height of row
+		for i := range images {
+			bounds := (*images[i]).Bounds()
+			widthCount += bounds.Dx()
+			if widthCount < screenWidth {
+				if rowHeight < bounds.Dy() {
+					rowHeight = bounds.Dy()
+				}
+				openvg.ImageGo(float32(widthCount-bounds.Dx()), float32(screenHeight-heightCount),*images[i])
+			} else {
+				widthCount = 0
+				heightCount += rowHeight
+			}
+		}
 		openvg.End()
 	}
 }
 
 // Displays the POSTed data on the screen
 func handlePOST(w http.ResponseWriter, r *http.Request) {
-	// Figure out what sort of data we're dealing with
-	// TODO: Check MIME type?
 	// Post the data to the screen
-	// TODO: Replace generic hell world code with something useful
 	log.Println("Sending request to drawing thread")
 	reqChan <- r
 	handleGET(w, r)
