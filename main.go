@@ -33,7 +33,19 @@ var (
 
 // Download and decode an image from a url
 func downloadImage(url string) (image.Image, error) {
-	return nil, nil
+	response, err := http.Get(url)
+	if err != nil {
+		log.Println("Failed to fetch image from URL ", url)
+		return nil, err
+	}
+	// read the image data from the response
+	img, _, err := image.Decode(response.Body)
+	defer response.Body.Close()
+	if err != nil {
+		log.Println("Error while decoding image from response body")
+		return nil, err
+	}
+	return img, nil
 }
 
 // Extract and decode an image submitted as part of a form POST
@@ -77,12 +89,21 @@ func drawThread(req <-chan *http.Request) {
 			img, err := extractImage(current.MultipartForm.File[i][0]) //TODO: should we check for more than one file header per key here?
 			if err != nil {
 				log.Println("Error while extracting image ", i, " from POST form")
+				log.Println(err)
 				continue
 			}
 			images = append(images, &img)
 		}
-
-		// TODO: Get images from URLs in the form
+		// Get all images (urls) from the form
+		for i := range current.MultipartForm.Value {
+			img, err := downloadImage(current.MultipartForm.Value[i][0]) //TODO: should we check for more than one url per key here?
+			if err != nil {
+				log.Println("Error while downloading image from url", current.MultipartForm.Value[i][0], ", from form field", i)
+				log.Println(err)
+				continue
+			}
+			images = append(images, &img)
+		}
 
 		// Download image
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
