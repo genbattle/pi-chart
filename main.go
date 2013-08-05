@@ -9,6 +9,7 @@ TODO: json/XML-based layout
 TODO: Command-line flags
 TODO: Variable resolution
 TODO: Transitional animations
+TODO: Unit tests.
 */
 package main
 
@@ -86,23 +87,27 @@ func drawThread(req <-chan *http.Request) {
 		current.ParseMultipartForm(10485760) // Parse the form with 10MB buffer
 		// Get all images (files) from the form
 		for i := range current.MultipartForm.File {
-			img, err := extractImage(current.MultipartForm.File[i][0]) //TODO: should we check for more than one file header per key here?
-			if err != nil {
-				log.Println("Error while extracting image ", i, " from POST form")
-				log.Println(err)
-				continue
+			for j := range current.MultipartForm.File[i] {
+				img, err := extractImage(current.MultipartForm.File[i][j])
+				if err != nil {
+					log.Println("Error while extracting image ", i, " from POST form")
+					log.Println(err)
+					continue
+				}
+				images = append(images, &img)
 			}
-			images = append(images, &img)
 		}
 		// Get all images (urls) from the form
 		for i := range current.MultipartForm.Value {
-			img, err := downloadImage(current.MultipartForm.Value[i][0]) //TODO: should we check for more than one url per key here?
-			if err != nil {
-				log.Println("Error while downloading image from url", current.MultipartForm.Value[i][0], ", from form field", i)
-				log.Println(err)
-				continue
+			for j := range current.MultipartForm.Value[i] {
+				img, err := downloadImage(current.MultipartForm.Value[i][j])
+				if err != nil {
+					log.Println("Error while downloading image from url", current.MultipartForm.Value[i][0], ", from form field", i)
+					log.Println(err)
+					continue
+				}
+				images = append(images, &img)
 			}
-			images = append(images, &img)
 		}
 
 		// Download image
