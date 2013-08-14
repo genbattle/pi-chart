@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"os"
 	"encoding/json"
+	"math"
 )
 
 var (
@@ -49,6 +50,13 @@ type GraphLayout struct {
 	Width, Height int
 }
 
+// Stores the calculated properties of the layout grid
+type Grid struct {
+	Rows, Cols int
+	ColWidth, RowHeight int
+	TotalWidth, TotalHeight int
+}
+
 // Parse the JSON layout/graph data
 func parseLayout(layoutJSON string) (*Layout, error) {
 	if len(layoutJSON) == 0 {
@@ -63,6 +71,32 @@ func parseLayout(layoutJSON string) (*Layout, error) {
 		return nil, err
 	}
 	return layout, nil
+}
+
+// Draws an image with the top left corner at the top left corner of the (row, col) cell of the grid. Resizes the image to be width cells wide and height cells high.
+func gridDrawImage(grid *Grid, img *image.Image, row, col, width, height int) {
+	// Calculate screen x,y for image, remembering that OpenVG's origin is bottom left, not top-left
+	x := float32(col * (*grid).ColWidth)
+	y := float32(grid.TotalHeight - (row * (*grid).RowHeight))
+	pixwidth := float32(width * (*grid).ColWidth)
+	pixheight := float32(height * (*grid).RowHeight)
+	// Calculate scale factor from pixel values
+	scalewidth := pixwidth / float32((*img).Bounds().Dx())
+	scaleheight := pixheight / float32((*img).Bounds().Dy())
+	// Draw the image
+	openvg.Scale(scalewidth, scaleheight)
+	openvg.ImageGo(x, y, *img)
+}
+
+func newGrid(totalWidth, totalHeight, rows, cols int) *Grid {
+	grid := new(Grid)
+	grid.Rows = rows
+	grid.Cols = cols
+	grid.ColWidth = totalWidth / cols
+	grid.RowHeight = totalWidth / rows
+	grid.TotalWidth = totalWidth
+	grid.TotalHeight = totalHeight
+	return grid
 }
 
 // Main internal drawing thread; all graphics calls have to be on the one thread, as exepected by OpenVG.
@@ -114,25 +148,24 @@ func drawThread(req <-chan *http.Request) {
 		openvg.Start(screenWidth, screenHeight) // Start the picture
 		openvg.BackgroundColor("black")         // Black background
 
-		// Display images in a simple scanning grid
-		widthCount := 0  // total row width
-		heightCount := 0 // total screen height
-		rowHeight := 0   // max height of row
-		for i := range images {
-			bounds := (*images[i]).Bounds()
-			widthCount += bounds.Dx()
-			if widthCount < screenWidth {
-				if rowHeight < bounds.Dy() {
-					rowHeight = bounds.Dy()
-				}
-				openvg.ImageGo(float32(widthCount-bounds.Dx()), float32(screenHeight-heightCount-bounds.Dy()), *images[i])
-			} else {
-				widthCount = 0
-				heightCount += rowHeight
-				if heightCount > screenHeight {
-					log.Println("Ran out of room to print images, ignoring some")
-					break
-				}
+		// Display images in default grid
+		// Can't be any graphs in this case - graphs require layout. TODO: Separate graphs from layout?
+		// Calculate grid size based on number of images/graphs
+		objcount := len(images) // TODO: Add graph count here
+		if objcount == 0 {
+			// nothing to display skip to next request
+			continue
+		}
+		dim := int(math.Ceil(math.Sqrt(float64(objcount))))
+		grid := newGrid(screenWidth, screenHeight, dim, dim)
+		row := 0
+		col := 0
+		// display images sequentially in the grid
+		for i := range(images) {
+			gridDrawImage(grid, images[i], row, col, 1, 1)
+			col++
+			if col > dim {
+				row++ // row should never be grater than dim, because of how we calculate dim
 			}
 		}
 		openvg.End()
