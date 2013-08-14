@@ -20,14 +20,52 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"encoding/json"
 )
 
 var (
 	screenWidth, screenHeight int
 	submitPage                []byte
-	reqChan                   chan *http.Request
+	reqChan                   chan *http.Request // TODO: Move this to main?
 )
 
+type Layout struct {
+	Rows, Cols int // Total number of rows/columns to divide the screen into
+	Images []ImageLayout
+	Graphs []GraphLayout
+}
+
+type ImageLayout struct {
+	FileName string
+	Scale string // scaling mode; stretch, zoom, shrink
+	// TODO: z-index to allow overlapping images/graphs
+	Left, Right int
+	Width, Height int
+}
+
+type GraphLayout struct {
+	Data []float64
+	Left, Right int
+	Width, Height int
+}
+
+// Parse the JSON layout/graph data
+func parseLayout(layoutJSON string) (*Layout, error) {
+	if len(layoutJSON) == 0 {
+		// Empty layout field, not an error, just no layout supplied
+		log.Println("Warning: No layout supplied")
+		return nil, nil
+	}
+	layout := new(Layout)
+	err := json.Unmarshal([]byte(layoutJSON), layout)
+	if err != nil {
+		log.Println("Error while unmarshaling the JSON layout data")
+		return nil, err
+	}
+	return layout, nil
+}
+
+// Main internal drawing thread; all graphics calls have to be on the one thread, as exepected by OpenVG.
 func drawThread(req <-chan *http.Request) {
 	screenWidth, screenHeight := openvg.Init()
 	openvg.Start(screenWidth, screenHeight)
@@ -42,31 +80,36 @@ func drawThread(req <-chan *http.Request) {
 		// Parse the POST form
 		current.ParseMultipartForm(10485760) // Parse the form with 10MB buffer
 		// Get all images (files) from the form
-		for i := range current.MultipartForm.File {
-			for j := range current.MultipartForm.File[i] {
-				img, err := extractImage(current.MultipartForm.File[i][j])
-				if err != nil {
-					log.Println("Error while extracting image ", i, " from POST form")
-					log.Println(err)
-					continue
-				}
-				images = append(images, &img)
+		key := "imagefile"
+		for j := range current.MultipartForm.File[key] {
+			img, err := extractImage(current.MultipartForm.File[key][j])
+			if err != nil {
+				log.Println("Error while extracting image ", j, " from POST form")
+				log.Println(err)
+				continue
 			}
+			images = append(images, &img)
 		}
 		// Get all images (urls) from the form
-		for i := range current.MultipartForm.Value {
-			for j := range current.MultipartForm.Value[i] {
-				img, err := downloadImage(current.MultipartForm.Value[i][j])
-				if err != nil {
-					log.Println("Error while downloading image from url", current.MultipartForm.Value[i][0], ", from form field", i)
-					log.Println(err)
-					continue
-				}
-				images = append(images, &img)
+		key = "imageurl"
+		for j := range current.MultipartForm.Value[key] {
+			img, err := downloadImage(current.MultipartForm.Value[key][j])
+			if err != nil {
+				log.Println("Error while downloading image from url", current.MultipartForm.Value[key][j])
+				log.Println(err)
+				continue
 			}
+			images = append(images, &img)
 		}
+		// Get only the _first_ layout object
+		key = "layout"
+		layout, err := parseLayout(current.MultipartForm.Value[key][0])
+		if err != nil {
+			log.Println("Error while parsing layout")
+			log.Println(err)
+		}
+		log.Println(layout) // TODO: do something with layout
 
-		// Download image
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
 		openvg.Start(screenWidth, screenHeight) // Start the picture
 		openvg.BackgroundColor("black")         // Black background
