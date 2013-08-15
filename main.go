@@ -77,12 +77,13 @@ func parseLayout(layoutJSON string) (*Layout, error) {
 func gridDrawImage(grid *Grid, img *image.Image, row, col, width, height int) {
 	// Calculate screen x,y for image, remembering that OpenVG's origin is bottom left, not top-left
 	x := float32(col * (*grid).ColWidth)
-	y := float32(grid.TotalHeight - (row * (*grid).RowHeight))
+	y := float32(grid.TotalHeight - (row * (*grid).RowHeight) - (*img).Bounds().Dy())
 	pixwidth := float32(width * (*grid).ColWidth)
 	pixheight := float32(height * (*grid).RowHeight)
 	// Calculate scale factor from pixel values
 	scalewidth := pixwidth / float32((*img).Bounds().Dx())
 	scaleheight := pixheight / float32((*img).Bounds().Dy())
+	log.Println(scalewidth, scaleheight)
 	// Draw the image
 	openvg.Scale(scalewidth, scaleheight)
 	openvg.ImageGo(x, y, *img)
@@ -127,22 +128,26 @@ func drawThread(req <-chan *http.Request) {
 		// Get all images (urls) from the form
 		key = "imageurl"
 		for j := range current.MultipartForm.Value[key] {
-			img, err := downloadImage(current.MultipartForm.Value[key][j])
-			if err != nil {
-				log.Println("Error while downloading image from url", current.MultipartForm.Value[key][j])
-				log.Println(err)
-				continue
+			if current.MultipartForm.Value[key][j] != "" {
+				img, err := downloadImage(current.MultipartForm.Value[key][j])
+				if err != nil {
+					log.Println("Error while downloading image from url", current.MultipartForm.Value[key][j])
+					log.Println(err)
+					continue
+				}
+				images = append(images, &img)
 			}
-			images = append(images, &img)
 		}
 		// Get only the _first_ layout object
 		key = "layout"
-		layout, err := parseLayout(current.MultipartForm.Value[key][0])
-		if err != nil {
-			log.Println("Error while parsing layout")
-			log.Println(err)
+		if len(current.MultipartForm.Value[key]) != 0 {
+			layout, err := parseLayout(current.MultipartForm.Value[key][0])
+			if err != nil {
+				log.Println("Error while parsing layout")
+				log.Println(err)
+			}
+			log.Println(layout) // TODO: do something with layout
 		}
-		log.Println(layout) // TODO: do something with layout
 
 		log.Println("Drawing image width ", screenWidth, " height ", screenHeight)
 		openvg.Start(screenWidth, screenHeight) // Start the picture
